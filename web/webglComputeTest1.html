@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+</head>
+<body>
+<div style="margin-left: 20px; margin-top: 20px">
+    <div><button onclick="jsCalculate1()" >js计算1次</button></div>
+    <div><button onclick="jsCalculate100()" >js计算100次</button></div>
+    <div><button onclick="glCalculate1()" >gl计算1次</button></div>
+    <div><button onclick="glCalculate100()" >gl计算100次</button></div>
+    <div id="logDiv"></div>
+
+</div>
+</body>
+<script>
+    // 日志
+    function addLog(log) {
+        console.log(log);
+        let logDiv = document.getElementById('logDiv');
+        logDiv.innerText = log;
+    }
+    addLog('Log');
+
+    const srcWidth = 1000;
+    const srcHeight = 1000;
+    let srcData;
+
+    function getData() {
+        const bean = {};
+        if(!srcData) {
+            srcData = [];
+            const len = srcWidth * srcHeight;
+            for (let i = 0 ; i < len ; i++) {
+                srcData.push(i+1);
+            }
+        }
+        bean.srcData = srcData;
+        return bean;
+    }
+
+    function jsCalculate1() {
+        const data = getData();
+        data.destData = new Array(srcData.length);
+
+        const start = Date.now();
+        data.index = 1;
+        jsCalculate(data);
+        const end = Date.now();
+        let resStr = 'jsCalculate1 during: ' + (end - start) + '\n';
+        for (let i = 0 ; i < 100 ; i++) {
+            resStr = resStr.concat(data.destData[i] + ', ');
+        }
+        addLog(resStr);
+    }
+
+    function jsCalculate100() {
+        let data = getData();
+        data.destData = new Array(srcData.length);
+        const start = Date.now();
+        for (let i = 0 ; i < 100 ; i++) {
+            data = {...data};
+            data.index = i + 1;
+            jsCalculate(data);
+        }
+        const end = Date.now();
+        let resStr = 'jsCalculate100 during: ' + (end - start) + '\n';
+        for (let i = 0 ; i < 100 ; i++) {
+            resStr = resStr.concat(data.destData[i] + ', ');
+        }
+        addLog(resStr);
+    }
+
+    function jsCalculate(data) {
+        const src = data.srcData;
+        src[0] = data.index;
+        const len = src.length;
+        const dest = data.destData;
+        const log2 = Math.log(2);
+        for (let i = 0 ; i < len ; i++) {
+            // 模拟复杂的运算
+            let c = Math.log(src[i]);
+            c = c / log2;
+            c = Math.pow(2, c);
+            c = Math.log(c) / log2;
+            dest[i] = c;
+        }
+    }
+
+    function checkDeviation(data) {
+        const jsData = getData();
+        jsData.index = data.index;
+        jsData.destData = new Array(jsData.srcData.length);
+        jsCalculate(jsData);
+
+        let maxDiff = 0;
+        const len = data.srcData.length;
+        for (let i = 0 ; i < len ; i++) {
+            const res = data.destData[i];
+            const jsRes = jsData.destData[i];
+            maxDiff = Math.max(maxDiff, Math.abs(res - jsRes));
+        }
+        return maxDiff;
+    }
+
+    function glCalculate1() {
+        const data = getData();
+        data.destData = new Float32Array(data.srcData.length);
+
+        const start = Date.now();
+        data.index = 1;
+        openGLDraw(data);
+        const end = Date.now();
+        let resStr = 'glCalculate1 during: ' + (end - start);
+
+        // 计算误差
+        let maxDiff = checkDeviation(data);
+        resStr = resStr.concat('\nmaxDiff: ' + maxDiff+ '\n');
+
+        for (let i = 0 ; i < 100 ; i++) {
+            resStr = resStr.concat(data.destData[i] + ', ');
+        }
+        addLog(resStr);
+    }
+
+    function glCalculate100() {
+        let data = getData();
+        data.destData = new Float32Array(data.srcData.length);
+
+        const start = Date.now();
+
+        for (let i = 0 ; i < 100 ; i++) {
+            data = {...data};
+            data.index = i + 1;
+            openGLDraw(data);
+        }
+
+        const end = Date.now();
+        let resStr = 'glCalculate100 during: ' + (end - start);
+
+        // 计算误差
+        let maxDiff = checkDeviation(data);
+        resStr = resStr.concat('\nmaxDiff: ' + maxDiff+ '\n');
+
+        for (let i = 0 ; i < 100 ; i++) {
+            resStr = resStr.concat(data.destData[i] + ', ');
+        }
+        addLog(resStr);
+    }
+
+    // openGL绘制
+    let gl;
+    let program;
+    let textureId;
+    let positionHandle;
+    let texCoordHandle;
+
+    function openGLDraw(data) {
+        if(!gl) {
+            gl = initGl(srcWidth, srcHeight);
+            program = gl.createProgram();
+            gl.clearColor(0, 0, 0, 0); // 设置清空颜色缓冲时的颜色值
+            initShader();
+            textureId = gl.createTexture();
+        }
+        draw(data);
+    }
+
+    function initGl(width, height) {
+        addLog("width:" + width + ", height:" + height);
+
+        // 画布
+        // let canvas = document.getElementById('canvas'); //获取canvas标签
+        let canvas = document.createElement('canvas');
+        //设置画布宽高、边框（边框也可使用CSS选择器来设定）
+        canvas.width = width;
+        canvas.height = height;
+        let version = 2;
+        let context = canvas.getContext('webgl2'); //获取上下文
+        if(!context) {
+            context = canvas.getContext('webgl');
+            version = 1;
+        }
+        if(!context) {
+            context = canvas.getContext('experimental-webgl');
+        }
+        if(!context) {
+            alert("Your Browser Doesn't Support WebGL");
+            return null;
+        }
+        addLog("webgl version:" + version);
+
+        /*
+            设置视口 context.viewport(x, y, width, height);
+            x: 用来设定视口的左下角水平坐标。默认值：0
+            y: 用来设定视口的左下角垂直坐标。默认值：0
+            width: 用来设定视口的宽度。默认值：canvas 的宽度
+            height: 用来设定视口的高度。默认值：canvas 的高度
+            当你第一次创建 WebGL 上下文的时候，视口的大小和 canvas 的大小是匹配的。然而，如果你重新改变了canvas的大小，你需要告诉 WebGL 上下文设定新的视口，因此这里作为初次创建这行代码可以省略
+          */
+        context.viewport(0, 0, width, height);
+
+        return context;
+    }
+
+    function initShader() {
+        // 创建顶点着色器 语法 gl.createShader(type) 此处 type 为枚举型值为 gl.VERTEX_SHADER 或 gl.FRAGMENT_SHADER 两者中的一个
+        const vShader = gl.createShader(gl.VERTEX_SHADER);
+        // 编写顶点着色器的 GLSL 代码 语法 gl.shaderSource(shader, source); shader - 用于设置程序代码的 webglShader（着色器对象) source - 包含 GLSL 程序代码的字符串
+        gl.shaderSource(vShader, `#version 300 es
+            layout (location = 0) in vec3 a_position;
+            layout (location = 1) in vec2 a_texCoord;
+            out vec2 v_texCoord;
+            void main() {
+                gl_Position = vec4(a_position, 1);
+                v_texCoord = a_texCoord;
+            }
+        `);
+        gl.compileShader(vShader) // 编译着色器代码
+
+        const fShader = gl.createShader(gl.FRAGMENT_SHADER);
+        gl.shaderSource(fShader, `#version 300 es
+            precision mediump float;
+            in vec2 v_texCoord; //接收从顶点着色器过来的纹理顶点
+            uniform sampler2D u_sTexture; //纹理内容数据
+            out vec4 outColor; //输出显示颜色
+
+            void main(){
+                vec4 inputPixel = texture(u_sTexture, v_texCoord); //纹理颜色值
+                // 将纹理颜色值 rgba 取出
+                // inputPixel.r 得到的值会是 float 0.0 ~ 1.0 间的值，原本是 255，得到的是 1.0，所以下方 * 255 是把原本byte复原回来
+                int ir = int(inputPixel.r * 255.0);
+                int ig = int(inputPixel.g * 255.0);
+                int ib = int(inputPixel.b * 255.0);
+                int ia = int(inputPixel.a * 255.0);
+
+                // 将原本的 4 bytes转成一个int
+                int ii = (ir & 0xFF) + ((ig & 0xFF) << 8) + ((ib & 0xFF) << 16) + ((ia & 0xFF) << 24);
+                // 得到真实传入的 float 值
+                float f = intBitsToFloat(ii);
+
+                // 模拟复杂的运算
+                f = log(f) / log(2.0); // 计算以2为底的log值
+                f = pow(2.0, f); // 计算2的f次方
+                f = log(f) / log(2.0); // 计算以2为底的log值
+
+                // 把计算结果 float 转回 int
+                int oi = floatBitsToInt(f);
+                // 把输出的rgba转回 0.0~1.0 的 float
+                float r = float((oi) & 0xFF) / 255.0;
+                float g = float((oi >> 8) & 0xFF) / 255.0;
+                float b = float((oi >> 16) & 0xFF) / 255.0;
+                float a = float((oi >> 24) & 0xFF) / 255.0;
+
+                outColor = vec4(r, g, b, a);
+            }
+        `); // 编写片元着色器代码
+        gl.compileShader(fShader); // 编译着色器代码
+
+        gl.attachShader(program, vShader); // 添加顶点着色器
+        gl.attachShader(program, fShader); // 添加片元着色器
+        gl.linkProgram(program); // 连接 program 中的着色器
+
+        let res = gl.getProgramParameter(program, gl.LINK_STATUS);
+        console.log('res:', res);
+        if(!res) {
+            let log = gl.getProgramInfoLog(program);
+            console.error(log);
+            return;
+        }
+
+        // 设置绘图顶点
+        positionHandle = gl.getAttribLocation(program, 'a_position');
+        // 获取 v_position 位置
+        const pBuffer = gl.createBuffer();
+        // 创建一个顶点缓冲对象，返回其 id，用来放三角形顶点数据，
+        gl.bindBuffer(gl.ARRAY_BUFFER, pBuffer);
+        // 将这个顶点缓冲对象绑定到 gl.ARRAY_BUFFER
+
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+                -1, -1,
+                1, -1,
+                1, 1,
+                1, 1,
+                -1, 1,
+                -1, -1,
+            ]),
+            // 因为会将数据发送到 GPU，为了省去数据解析，这里使用 Float32Array 直接传送数据
+            gl.STATIC_DRAW // 表示缓冲区的内容不会经常更改
+        );
+        // 将顶点数据加入的刚刚创建的缓存对象
+        gl.vertexAttribPointer( // 告诉 OpenGL 如何从 Buffer 中获取数据
+            positionHandle, // 顶点属性的索引
+            2, // 组成数量，必须是 1，2，3 或 4。我们只提供了 x 和 y
+            gl.FLOAT, // 每个元素的数据类型
+            false, // 是否归一化到特定的范围，对 FLOAT 类型数据设置无效
+            0, // stride 步长 数组中一行长度，0 表示数据是紧密的没有空隙，让 OpenGL 决定具体步长
+            0 // offset 字节偏移量，必须是类型的字节长度的倍数。
+        );
+
+        // 设置纹理顶点
+        texCoordHandle = gl.getAttribLocation(program, 'a_texCoord');
+        const tBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, tBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+                0, 0,
+                1, 0,
+                1, 1,
+                1, 1,
+                0, 1,
+                0, 0,
+            ]),
+            // 因为会将数据发送到 GPU，为了省去数据解析，这里使用 Float32Array 直接传送数据
+            gl.STATIC_DRAW // 表示缓冲区的内容不会经常更改
+        );
+        // 将顶点数据加入的刚刚创建的缓存对象
+        gl.vertexAttribPointer( // 告诉 OpenGL 如何从 Buffer 中获取数据
+            texCoordHandle, // 顶点属性的索引
+            2, // 组成数量，必须是 1，2，3 或 4。我们只提供了 x 和 y
+            gl.FLOAT, // 每个元素的数据类型
+            false, // 是否归一化到特定的范围，对 FLOAT 类型数据设置无效
+            0, // stride 步长 数组中一行长度，0 表示数据是紧密的没有空隙，让 OpenGL 决定具体步长
+            0 // offset 字节偏移量，必须是类型的字节长度的倍数。
+        );
+    }
+
+    function initTexture(data) {
+        gl.bindTexture(gl.TEXTURE_2D, textureId);
+
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+        data.srcData[0] = data.index;
+        const dataBuffer = new Uint8Array(new Float32Array(data.srcData).buffer);
+
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, srcWidth, srcHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, dataBuffer);
+
+    }
+
+    function draw(data) {
+
+        gl.useProgram(program); // 告诉 WebGL 用这个 program 进行渲染
+
+        initTexture(data);
+
+        gl.enableVertexAttribArray(positionHandle);
+        gl.enableVertexAttribArray(texCoordHandle);
+        // 开启 attribute 变量额，使顶点着色器能够访问缓冲区数据
+
+        gl.clear(gl.COLOR_BUFFER_BIT); // 清空颜色缓冲区，也就是清空画布
+        // 语法 gl.drawArrays(mode, first, count); mode - 指定绘制图元的方式 first - 指定从哪个点开始绘制 count - 指定绘制需要使用到多少个点
+        gl.drawArrays( gl.TRIANGLES, 0, 6 );
+
+        let arr = new Uint8Array(data.destData.buffer);
+        gl.readPixels(0, 0, srcWidth, srcHeight, gl.RGBA, gl.UNSIGNED_BYTE, arr);
+
+        gl.disableVertexAttribArray(positionHandle);
+        gl.disableVertexAttribArray(texCoordHandle);
+    }
+
+</script>
+</html>
