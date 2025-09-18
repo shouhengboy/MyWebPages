@@ -222,6 +222,7 @@
         const fShader = gl.createShader(gl.FRAGMENT_SHADER);
         gl.shaderSource(fShader, `#version 300 es
             precision mediump float;
+            precision highp int;
             in vec2 v_texCoord; //接收从顶点着色器过来的纹理顶点
             uniform sampler2D u_sTexture; //纹理内容数据
             out vec4 outColor; //输出显示颜色
@@ -238,7 +239,7 @@
                 // 将原本的 4 bytes转成一个int
                 int ii = (ir & 0xFF) + ((ig & 0xFF) << 8) + ((ib & 0xFF) << 16) + ((ia & 0xFF) << 24);
                 // 得到真实传入的 float 值
-                float f = intBitsToFloat(ii);
+                highp float f = intBitsToFloat(ii);
 
                 // 模拟复杂的运算
                 f = log(f) / log(2.0); // 计算以2为底的log值
